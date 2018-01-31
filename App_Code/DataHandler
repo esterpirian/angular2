@@ -1,0 +1,173 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Web;
+using System.IO;
+using System.Web.Script.Serialization;
+using System.Web.SessionState;
+
+　
+namespace PostBank.Ajax
+{
+    public class DataHandler : IHttpHandler, IRequiresSessionState
+    {
+        #region IHttpHandler Members
+
+        public bool IsReusable
+        {
+            get { return true; }
+        }
+
+        public void ProcessRequest(HttpContext context)
+        {
+            try
+            {
+                //(context.Request.HttpMethod + " " + context.Request.Url + Environment.NewLine + HttpUtility.UrlDecode(HttpContext.Current.Request.Headers.ToString()).Replace("&", Environment.NewLine)).WriteToEventLog(System.Diagnostics.EventLogEntryType.Information);
+                var serviceType = Type.GetType(Path.GetFileNameWithoutExtension(context.Request.PhysicalPath), false, true);
+                if (serviceType != null)
+                {
+
+                    var service = Activator.CreateInstance(serviceType);// as AjaxService;
+                    if (service != null)
+                    {
+                        string file = Path.GetFileName(context.Request.PhysicalPath);
+                        int methodIndex = 0;
+                        while (!context.Request.Url.Segments[methodIndex].StartsWith(file))
+                        {
+                            methodIndex++;
+                        }
+                        methodIndex++;
+                        var method = service.GetType().GetMethods().FirstOrDefault(m => m.Name.ToLower() == context.Request.Url.Segments[methodIndex].TrimEnd('/').ToLower());
+                        if (method != null)
+                        {
+
+                            methodIndex++;
+                            var parameter = method.GetParameters();
+                            object[] parameterArray = null;
+                            //var javaScriptSerializer = new JavaScriptSerializer() { MaxJsonLength = int.MaxValue };
+                            //javaScriptSerializer.RegisterConverters(new[] { new TypeConverter() });
+                            if (parameter != null)
+                            {
+
+                                parameterArray = new object[parameter.Length];
+                                for (int i = 0; i < parameterArray.Length; i++)
+                                {
+                                    if (parameter[i].Name == "form")
+                                    {
+                                        using (var reader = new StreamReader(context.Request.InputStream))
+                                        {
+                                            if (parameter[i].ParameterType == typeof(string))
+                                            {
+                                                parameterArray[i] = reader.ReadToEnd();
+                                            }
+                                            else
+                                            {
+                                                parameterArray[i] = Newtonsoft.Json.JsonConvert.DeserializeObject(reader.ReadToEnd(), parameter[i].ParameterType);
+                                               // parameterArray[i] = javaScriptSerializer.Deserialize(reader.ReadToEnd(), parameter[i].ParameterType);
+
+                                            }
+                                        }
+                                    }
+                                    else if (context.Request.Url.Segments.Length > i + methodIndex)
+                                    {
+                                        if (parameter[i].ParameterType.IsEnum)
+                                        {
+                                            int param = 0;
+                                            if (int.TryParse(HttpUtility.UrlDecode(context.Request.Url.Segments[i + methodIndex].TrimEnd('/')), out param))
+                                            {
+                                                parameterArray[i] = param;
+                                            }
+                                            else
+                                            {
+                                                parameterArray[i] = Enum.Parse(parameter[i].ParameterType, HttpUtility.UrlDecode(context.Request.Url.Segments[i + methodIndex].TrimEnd('/')), true);
+                                            }
+                                        }
+                                        else if (parameter[i].ParameterType.IsGenericType &&
+                                            parameter[i].ParameterType.GetGenericTypeDefinition() == typeof(Nullable<>))
+                                        {
+                                            string value = HttpUtility.UrlDecode(context.Request.Url.Segments[i + methodIndex].TrimEnd('/'));
+                                            if (value != "null" && value != "undefined")
+                                            {
+                                                parameterArray[i] = Convert.ChangeType(value, Nullable.GetUnderlyingType(parameter[i].ParameterType));
+                                            }
+                                        }
+                                        else
+                                        {
+                                            parameterArray[i] = Convert.ChangeType(HttpUtility.UrlDecode(context.Request.Url.Segments[i + methodIndex].TrimEnd('/')), parameter[i].ParameterType);
+                                        }
+                                    }
+                                    else if (context.Request.QueryString.Count > 0)
+                                    {
+                                        if (parameter[i].ParameterType.IsEnum)
+                                        {
+                                            int param = 0;
+                                            if (int.TryParse(HttpUtility.UrlDecode(context.Request.QueryString[i]), out param))
+                                            {
+                                                parameterArray[i] = param;
+                                            }
+                                            else
+                                            {
+                                                parameterArray[i] = Enum.Parse(parameter[i].ParameterType, HttpUtility.UrlDecode(context.Request.QueryString[i]), true);
+                                            }
+                                        }
+                                        else if (parameter[i].ParameterType.IsGenericType &&
+                                            parameter[i].ParameterType.GetGenericTypeDefinition() == typeof(Nullable<>))
+                                        {
+                                            string value = HttpUtility.UrlDecode(context.Request.QueryString[i]);
+                                            if (value != "null" && value != "undefined")
+                                            {
+                                                parameterArray[i] = Convert.ChangeType(value, Nullable.GetUnderlyingType(parameter[i].ParameterType));
+                                            }
+                                        }
+                                        else
+                                        {
+                                            parameterArray[i] = Convert.ChangeType(HttpUtility.UrlDecode(context.Request.QueryString[i]), parameter[i].ParameterType);
+                                        }
+                                    }
+                                    else
+                                    {
+                                        parameterArray[i] = parameter[i].ParameterType.IsPrimitive ? parameter[i].DefaultValue : null;
+                                    }
+                                }
+                            }
+                            //}  
+                            var returnValue = method.Invoke(service, parameterArray);
+                            var stringDSata = Newtonsoft.Json.JsonConvert.SerializeObject(returnValue);
+                            context.Response.Expires = -1;
+                            context.Response.AddHeader("pragma", "no-cache");
+                            context.Response.AddHeader("cache-control", "no-store");
+                            switch (context.Request.CurrentExecutionFilePathExtension.ToLower())
+                            {
+                                case ".jsdata":
+                                    {
+                                        context.Response.ContentType = "application/json";
+                                        context.Response.Write(stringDSata);
+                                        break;
+                                    }
+                               
+                              
+                            }
+
+                        }
+                        else
+                        {
+                            context.Response.StatusCode = 401;
+                            context.Response.Clear();
+                        }
+
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                //ex.WriteToEventLog();
+                context.Response.StatusCode = 500;
+                context.Response.Clear();
+               
+            }
+        }
+
+        #endregion
+    }
+}
