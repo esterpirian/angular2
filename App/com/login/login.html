@@ -1,0 +1,19 @@
+<form class="example-container">
+    let's login
+    <mat-form-field class="example-full-width">
+        <input matInput placeholder="Favorite food" [(ngModel)]="ticketCount.UserName" name="name">
+    </mat-form-field>
+    <div>
+        <h1>Welcome to bookshow.com</h1>
+        <span>Welcome User</span>
+        <p>Currently, Number of Tickets available are: {{ticketCount.UserName}}</p>
+        <button (click)="bookShow()">Book Ticket</button>
+        <button (click)="getDataUser()">Get Data</button>
+    </div>
+
+    
+</form>
+
+<!-- Copyright 2017 Google Inc. All Rights Reserved.
+    Use of this source code is governed by an MIT-style license that
+    can be found in the LICENSE file at http://angular.io/license -->
